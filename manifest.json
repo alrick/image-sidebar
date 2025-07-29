@@ -4,7 +4,7 @@
     "version": "1.0.0",
     "minAppVersion": "0.15.0",
     "description": "Displays the image associated with the current file in the right sidebar, based on a frontmatter property",
-    "author": "Your name",
+    "author": "Alrick Deillon",
     "authorUrl": "",
     "fundingUrl": "",
     "isDesktopOnly": false
