@@ -1,134 +1,405 @@
-import { App, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting } from 'obsidian';
+// main.ts
+import { Plugin, WorkspaceLeaf, ItemView, TFile } from 'obsidian';
 
-// Remember to rename these classes and interfaces!
+const VIEW_TYPE_IMAGE_SIDEBAR = 'image-sidebar-view';
 
-interface MyPluginSettings {
-	mySetting: string;
+// Interface pour les paramètres du plugin
+interface ImageSidebarSettings {
+    imageProperty: string; // Nom de la propriété qui contient le chemin de l'image
 }
 
-const DEFAULT_SETTINGS: MyPluginSettings = {
-	mySetting: 'default'
+const DEFAULT_SETTINGS: ImageSidebarSettings = {
+    imageProperty: 'image'
 }
 
-export default class MyPlugin extends Plugin {
-	settings: MyPluginSettings;
+// Vue personnalisée pour afficher l'image
+class ImageSidebarView extends ItemView {
+    plugin: ImageSidebarPlugin;
+    currentImagePath: string | null = null;
 
-	async onload() {
-		await this.loadSettings();
+    constructor(leaf: WorkspaceLeaf, plugin: ImageSidebarPlugin) {
+        super(leaf);
+        this.plugin = plugin;
+    }
 
-		// This creates an icon in the left ribbon.
-		const ribbonIconEl = this.addRibbonIcon('dice', 'Sample Plugin', (evt: MouseEvent) => {
-			// Called when the user clicks the icon.
-			new Notice('This is a notice!');
-		});
-		// Perform additional things with the ribbon
-		ribbonIconEl.addClass('my-plugin-ribbon-class');
+    getViewType() {
+        return VIEW_TYPE_IMAGE_SIDEBAR;
+    }
 
-		// This adds a status bar item to the bottom of the app. Does not work on mobile apps.
-		const statusBarItemEl = this.addStatusBarItem();
-		statusBarItemEl.setText('Status Bar Text');
+    getDisplayText() {
+        return 'Image du fichier';
+    }
 
-		// This adds a simple command that can be triggered anywhere
-		this.addCommand({
-			id: 'open-sample-modal-simple',
-			name: 'Open sample modal (simple)',
-			callback: () => {
-				new SampleModal(this.app).open();
-			}
-		});
-		// This adds an editor command that can perform some operation on the current editor instance
-		this.addCommand({
-			id: 'sample-editor-command',
-			name: 'Sample editor command',
-			editorCallback: (editor: Editor, view: MarkdownView) => {
-				console.log(editor.getSelection());
-				editor.replaceSelection('Sample Editor Command');
-			}
-		});
-		// This adds a complex command that can check whether the current state of the app allows execution of the command
-		this.addCommand({
-			id: 'open-sample-modal-complex',
-			name: 'Open sample modal (complex)',
-			checkCallback: (checking: boolean) => {
-				// Conditions to check
-				const markdownView = this.app.workspace.getActiveViewOfType(MarkdownView);
-				if (markdownView) {
-					// If checking is true, we're simply "checking" if the command can be run.
-					// If checking is false, then we want to actually perform the operation.
-					if (!checking) {
-						new SampleModal(this.app).open();
-					}
+    getIcon() {
+        return 'image';
+    }
 
-					// This command will only show up in Command Palette when the check function returns true
-					return true;
-				}
-			}
-		});
+    async onOpen() {
+        const container = this.containerEl.children[1];
+        container.empty();
+        container.createEl('div', { 
+            text: 'Aucune image à afficher',
+            cls: 'image-sidebar-placeholder'
+        });
 
-		// This adds a settings tab so the user can configure various aspects of the plugin
-		this.addSettingTab(new SampleSettingTab(this.app, this));
+        // Écouter les changements de fichier actif
+        this.registerEvent(
+            this.app.workspace.on('active-leaf-change', () => {
+                this.updateImage();
+            })
+        );
 
-		// If the plugin hooks up any global DOM events (on parts of the app that doesn't belong to this plugin)
-		// Using this function will automatically remove the event listener when this plugin is disabled.
-		this.registerDomEvent(document, 'click', (evt: MouseEvent) => {
-			console.log('click', evt);
-		});
+        // Écouter les modifications de métadonnées
+        this.registerEvent(
+            this.app.metadataCache.on('changed', (file) => {
+                const activeFile = this.app.workspace.getActiveFile();
+                if (activeFile && file === activeFile) {
+                    this.updateImage();
+                }
+            })
+        );
 
-		// When registering intervals, this function will automatically clear the interval when the plugin is disabled.
-		this.registerInterval(window.setInterval(() => console.log('setInterval'), 5 * 60 * 1000));
-	}
+        // Afficher l'image initiale
+        this.updateImage();
+    }
 
-	onunload() {
+    async updateImage() {
+        const container = this.containerEl.children[1];
+        const activeFile = this.app.workspace.getActiveFile();
 
-	}
+        if (!activeFile) {
+            this.showPlaceholder(container, 'Aucun fichier ouvert');
+            return;
+        }
 
-	async loadSettings() {
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
-	}
+        // Récupérer les métadonnées du fichier
+        const metadata = this.app.metadataCache.getFileCache(activeFile);
+        const frontmatter = metadata?.frontmatter;
 
-	async saveSettings() {
-		await this.saveData(this.settings);
-	}
+        if (!frontmatter || !frontmatter[this.plugin.settings.imageProperty]) {
+            this.showPlaceholder(container, 'Aucune propriété "' + this.plugin.settings.imageProperty + '" trouvée');
+            return;
+        }
+
+        const imagePath = frontmatter[this.plugin.settings.imageProperty];
+        
+        // Éviter de recharger la même image
+        if (this.currentImagePath === imagePath) {
+            return;
+        }
+
+        this.currentImagePath = imagePath;
+        await this.displayImage(container, imagePath, activeFile);
+    }
+
+    showPlaceholder(container: Element, message: string) {
+        container.empty();
+        const placeholder = container.createEl('div', { 
+            text: message,
+            cls: 'image-sidebar-placeholder'
+        });
+
+        // Ajouter la fonctionnalité de glisser-déposer si pas d'image définie
+        if (message.includes('Aucune propriété')) {
+            this.setupDropZone(placeholder, container);
+        }
+        
+        this.currentImagePath = null;
+    }
+
+    setupDropZone(placeholder: HTMLElement, container: Element) {
+        // Modifier le texte pour indiquer le drag & drop
+        placeholder.empty();
+        placeholder.createEl('div', { text: 'Aucune image définie' });
+        placeholder.createEl('div', { 
+            text: 'Glissez-déposez une image ici',
+            cls: 'image-sidebar-drop-hint'
+        });
+        
+        placeholder.addClass('image-sidebar-dropzone');
+
+        // Événements de drag & drop
+        placeholder.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            placeholder.addClass('image-sidebar-dragover');
+        });
+
+        placeholder.addEventListener('dragleave', (e) => {
+            e.preventDefault();
+            placeholder.removeClass('image-sidebar-dragover');
+        });
+
+        placeholder.addEventListener('drop', async (e) => {
+            e.preventDefault();
+            placeholder.removeClass('image-sidebar-dragover');
+            
+            const files = e.dataTransfer?.files;
+            if (!files || files.length === 0) return;
+
+            const file = files[0];
+            
+            // Vérifier que c'est une image
+            if (!file.type.startsWith('image/')) {
+                this.showTemporaryMessage(container, 'Veuillez déposer un fichier image', 'error');
+                return;
+            }
+
+            await this.handleImageDrop(file, container);
+        });
+    }
+
+    async handleImageDrop(file: File, container: Element) {
+        const activeFile = this.app.workspace.getActiveFile();
+        if (!activeFile) {
+            this.showTemporaryMessage(container, 'Aucun fichier ouvert', 'error');
+            return;
+        }
+
+        try {
+            // Afficher un indicateur de chargement
+            this.showTemporaryMessage(container, 'Importation en cours...', 'loading');
+
+            // Créer un nom de fichier unique
+            const fileName = this.generateUniqueFileName(file.name);
+            
+            // Lire le fichier
+            const arrayBuffer = await file.arrayBuffer();
+            
+            // Obtenir le chemin d'attachement et créer le dossier si nécessaire
+            const attachmentPath = this.getAttachmentPath(fileName);
+            await this.ensureAttachmentFolderExists(attachmentPath);
+            
+            // Sauvegarder dans le vault
+            await this.app.vault.createBinary(attachmentPath, arrayBuffer);
+
+            // Mettre à jour le frontmatter du fichier actuel
+            await this.updateFileFrontmatter(activeFile, fileName);
+
+            // Rafraîchir l'affichage
+            setTimeout(() => this.updateImage(), 100);
+
+        } catch (error) {
+            console.error('Erreur lors de l\'importation:', error);
+            this.showTemporaryMessage(container, 'Erreur lors de l\'importation', 'error');
+        }
+    }
+
+    async ensureAttachmentFolderExists(filePath: string) {
+        // Extraire le dossier du chemin complet
+        const folderPath = filePath.substring(0, filePath.lastIndexOf('/'));
+        
+        if (folderPath && !this.app.vault.getAbstractFileByPath(folderPath)) {
+            // Créer le dossier s'il n'existe pas
+            await this.app.vault.createFolder(folderPath);
+        }
+    }
+
+    generateUniqueFileName(originalName: string): string {
+        const files = this.app.vault.getFiles();
+        let fileName = originalName;
+        let counter = 1;
+
+        while (files.some(f => f.name === fileName)) {
+            const nameParts = originalName.split('.');
+            const extension = nameParts.pop();
+            const baseName = nameParts.join('.');
+            fileName = baseName + '_' + counter + '.' + extension;
+            counter++;
+        }
+
+        return fileName;
+    }
+
+    getAttachmentPath(fileName: string): string {
+        const activeFile = this.app.workspace.getActiveFile();
+        if (!activeFile) {
+            return fileName;
+        }
+
+        // Utiliser la même logique qu'Obsidian pour déterminer le dossier d'attachments
+        const attachmentFolderPath = (this.app.vault as any).config?.attachmentFolderPath;
+        
+        if (!attachmentFolderPath || attachmentFolderPath === '/') {
+            // Sauvegarder à la racine du vault
+            return fileName;
+        } else if (attachmentFolderPath === './') {
+            // Sauvegarder dans le même dossier que le fichier actuel
+            const activeFileFolder = activeFile.parent?.path || '';
+            return activeFileFolder ? activeFileFolder + '/' + fileName : fileName;
+        } else if (attachmentFolderPath.startsWith('./')) {
+            // Chemin relatif au fichier actuel
+            const activeFileFolder = activeFile.parent?.path || '';
+            const relativePath = attachmentFolderPath.substring(2); // Enlever './'
+            const fullPath = activeFileFolder ? activeFileFolder + '/' + relativePath : relativePath;
+            return fullPath + '/' + fileName;
+        } else {
+            // Chemin absolu depuis la racine du vault
+            return attachmentFolderPath + '/' + fileName;
+        }
+    }
+
+    async updateFileFrontmatter(file: TFile, imageName: string) {
+        const content = await this.app.vault.read(file);
+        const frontmatterRegex = /^---\n([\s\S]*?)\n---/;
+        const match = content.match(frontmatterRegex);
+
+        let newContent: string;
+        const imageProperty = this.plugin.settings.imageProperty + ': "[[' + imageName + ']]"';
+
+        if (match) {
+            // Frontmatter existe déjà
+            const frontmatter = match[1];
+            const propertyRegex = new RegExp('^' + this.plugin.settings.imageProperty + ':.*$', 'm');
+            
+            if (frontmatter.match(propertyRegex)) {
+                // Remplacer la propriété existante
+                const newFrontmatter = frontmatter.replace(propertyRegex, imageProperty);
+                newContent = content.replace(frontmatterRegex, '---\n' + newFrontmatter + '\n---');
+            } else {
+                // Ajouter la propriété
+                const newFrontmatter = frontmatter + '\n' + imageProperty;
+                newContent = content.replace(frontmatterRegex, '---\n' + newFrontmatter + '\n---');
+            }
+        } else {
+            // Créer un nouveau frontmatter
+            newContent = '---\n' + imageProperty + '\n---\n\n' + content;
+        }
+
+        await this.app.vault.modify(file, newContent);
+    }
+
+    showTemporaryMessage(container: Element, message: string, type: 'loading' | 'error' | 'success' = 'loading') {
+        container.empty();
+        const messageEl = container.createEl('div', { 
+            text: message,
+            cls: 'image-sidebar-message image-sidebar-' + type
+        });
+
+        if (type !== 'loading') {
+            setTimeout(() => {
+                this.updateImage();
+            }, 2000);
+        }
+    }
+
+    async displayImage(container: Element, imagePath: string, activeFile: TFile) {
+        container.empty();
+
+        try {
+            let imageFile: TFile | null = null;
+            let cleanImagePath = imagePath;
+
+            // Vérifier si c'est un lien Obsidian [[filename]]
+            const obsidianLinkMatch = imagePath.match(/^\[\[(.+?)\]\]$/);
+            if (obsidianLinkMatch) {
+                cleanImagePath = obsidianLinkMatch[1];
+                // Rechercher le fichier par nom dans tout le vault
+                const files = this.app.vault.getFiles();
+                imageFile = files.find(file => 
+                    file.name === cleanImagePath || 
+                    file.name === cleanImagePath + '.png' ||
+                    file.name === cleanImagePath + '.jpg' ||
+                    file.name === cleanImagePath + '.jpeg' ||
+                    file.name === cleanImagePath + '.gif' ||
+                    file.name === cleanImagePath + '.webp' ||
+                    file.name === cleanImagePath + '.svg' ||
+                    file.basename === cleanImagePath
+                ) || null;
+            } else {
+                // Méthode classique avec chemin relatif/absolu
+                imageFile = this.app.metadataCache.getFirstLinkpathDest(imagePath, activeFile.path);
+            }
+            
+            if (!imageFile) {
+                this.showPlaceholder(container, 'Image non trouvée: ' + cleanImagePath);
+                return;
+            }
+
+            // Créer l'élément image
+            const imageContainer = container.createEl('div', { cls: 'image-sidebar-container' });
+            const img = imageContainer.createEl('img', { cls: 'image-sidebar-img' });
+            
+            // Obtenir l'URL de l'image
+            const imageUrl = this.app.vault.getResourcePath(imageFile);
+            img.src = imageUrl;
+            img.alt = imagePath;
+
+            // Ajouter le nom du fichier image
+            imageContainer.createEl('div', { 
+                text: imageFile.name,
+                cls: 'image-sidebar-filename'
+            });
+
+            // Gestion des erreurs de chargement
+            img.onerror = () => {
+                this.showPlaceholder(container, 'Erreur de chargement: ' + imagePath);
+            };
+
+        } catch (error) {
+            console.error('Erreur lors de l\'affichage de l\'image:', error);
+            this.showPlaceholder(container, 'Erreur: ' + imagePath);
+        }
+    }
+
+    async onClose() {
+        // Nettoyage si nécessaire
+    }
 }
 
-class SampleModal extends Modal {
-	constructor(app: App) {
-		super(app);
-	}
+// Plugin principal
+export default class ImageSidebarPlugin extends Plugin {
+    settings: ImageSidebarSettings;
 
-	onOpen() {
-		const {contentEl} = this;
-		contentEl.setText('Woah!');
-	}
+    async onload() {
+        await this.loadSettings();
 
-	onClose() {
-		const {contentEl} = this;
-		contentEl.empty();
-	}
-}
+        // Enregistrer la vue personnalisée
+        this.registerView(
+            VIEW_TYPE_IMAGE_SIDEBAR,
+            (leaf) => new ImageSidebarView(leaf, this)
+        );
 
-class SampleSettingTab extends PluginSettingTab {
-	plugin: MyPlugin;
+        // Ajouter une commande pour ouvrir la vue
+        this.addCommand({
+            id: 'open-image-sidebar',
+            name: 'Ouvrir la sidebar d\'images',
+            callback: () => {
+                this.activateView();
+            }
+        });
 
-	constructor(app: App, plugin: MyPlugin) {
-		super(app, plugin);
-		this.plugin = plugin;
-	}
+        // Ajouter automatiquement la vue à la sidebar droite au démarrage
+        this.app.workspace.onLayoutReady(() => {
+            this.activateView();
+        });
+    }
 
-	display(): void {
-		const {containerEl} = this;
+    async activateView() {
+        const { workspace } = this.app;
 
-		containerEl.empty();
+        let leaf: WorkspaceLeaf | null = null;
+        const leaves = workspace.getLeavesOfType(VIEW_TYPE_IMAGE_SIDEBAR);
 
-		new Setting(containerEl)
-			.setName('Setting #1')
-			.setDesc('It\'s a secret')
-			.addText(text => text
-				.setPlaceholder('Enter your secret')
-				.setValue(this.plugin.settings.mySetting)
-				.onChange(async (value) => {
-					this.plugin.settings.mySetting = value;
-					await this.plugin.saveSettings();
-				}));
-	}
+        if (leaves.length > 0) {
+            // Activer la vue existante
+            leaf = leaves[0];
+        } else {
+            // Créer une nouvelle vue dans la sidebar droite
+            leaf = workspace.getRightLeaf(false);
+            await leaf?.setViewState({ type: VIEW_TYPE_IMAGE_SIDEBAR, active: true });
+        }
+
+        // Révéler la vue
+        if (leaf) {
+            workspace.revealLeaf(leaf);
+        }
+    }
+
+    async loadSettings() {
+        this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    }
+
+    async saveSettings() {
+        await this.saveData(this.settings);
+    }
 }

@@ -1,11 +1,11 @@
 {
-	"id": "sample-plugin",
-	"name": "Sample Plugin",
-	"version": "1.0.0",
-	"minAppVersion": "0.15.0",
-	"description": "Demonstrates some of the capabilities of the Obsidian API.",
-	"author": "Obsidian",
-	"authorUrl": "https://obsidian.md",
-	"fundingUrl": "https://obsidian.md/pricing",
-	"isDesktopOnly": false
+    "id": "image-sidebar",
+    "name": "Image Sidebar",
+    "version": "1.0.0",
+    "minAppVersion": "0.15.0",
+    "description": "Affiche l'image associée au fichier actuel dans la sidebar droite, basée sur une propriété frontmatter",
+    "author": "Votre nom",
+    "authorUrl": "",
+    "fundingUrl": "",
+    "isDesktopOnly": false
 }
