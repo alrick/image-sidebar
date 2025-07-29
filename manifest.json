@@ -3,8 +3,8 @@
     "name": "Image Sidebar",
     "version": "1.0.0",
     "minAppVersion": "0.15.0",
-    "description": "Affiche l'image associée au fichier actuel dans la sidebar droite, basée sur une propriété frontmatter",
-    "author": "Votre nom",
+    "description": "Displays the image associated with the current file in the right sidebar, based on a frontmatter property",
+    "author": "Your name",
     "authorUrl": "",
     "fundingUrl": "",
     "isDesktopOnly": false

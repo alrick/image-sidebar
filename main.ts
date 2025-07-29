@@ -3,16 +3,16 @@ import { Plugin, WorkspaceLeaf, ItemView, TFile } from 'obsidian';
 
 const VIEW_TYPE_IMAGE_SIDEBAR = 'image-sidebar-view';
 
-// Interface pour les paramètres du plugin
+// Interface for plugin settings
 interface ImageSidebarSettings {
-    imageProperty: string; // Nom de la propriété qui contient le chemin de l'image
+    imageProperty: string; // Name of the property containing the image path
 }
 
 const DEFAULT_SETTINGS: ImageSidebarSettings = {
     imageProperty: 'image'
 }
 
-// Vue personnalisée pour afficher l'image
+// Custom view to display the image
 class ImageSidebarView extends ItemView {
     plugin: ImageSidebarPlugin;
     currentImagePath: string | null = null;
@@ -27,7 +27,7 @@ class ImageSidebarView extends ItemView {
     }
 
     getDisplayText() {
-        return 'Image du fichier';
+        return 'File Image';
     }
 
     getIcon() {
@@ -38,18 +38,18 @@ class ImageSidebarView extends ItemView {
         const container = this.containerEl.children[1];
         container.empty();
         container.createEl('div', { 
-            text: 'Aucune image à afficher',
+            text: 'No image to display',
             cls: 'image-sidebar-placeholder'
         });
 
-        // Écouter les changements de fichier actif
+        // Listen for active file changes
         this.registerEvent(
             this.app.workspace.on('active-leaf-change', () => {
                 this.updateImage();
             })
         );
 
-        // Écouter les modifications de métadonnées
+        // Listen for metadata changes
         this.registerEvent(
             this.app.metadataCache.on('changed', (file) => {
                 const activeFile = this.app.workspace.getActiveFile();
@@ -59,7 +59,7 @@ class ImageSidebarView extends ItemView {
             })
         );
 
-        // Afficher l'image initiale
+        // Display initial image
         this.updateImage();
     }
 
@@ -68,22 +68,22 @@ class ImageSidebarView extends ItemView {
         const activeFile = this.app.workspace.getActiveFile();
 
         if (!activeFile) {
-            this.showPlaceholder(container, 'Aucun fichier ouvert');
+            this.showPlaceholder(container, 'No file open');
             return;
         }
 
-        // Récupérer les métadonnées du fichier
+        // Get file metadata
         const metadata = this.app.metadataCache.getFileCache(activeFile);
         const frontmatter = metadata?.frontmatter;
 
         if (!frontmatter || !frontmatter[this.plugin.settings.imageProperty]) {
-            this.showPlaceholder(container, 'Aucune propriété "' + this.plugin.settings.imageProperty + '" trouvée');
+            this.showPlaceholder(container, 'No "' + this.plugin.settings.imageProperty + '" property found');
             return;
         }
 
         const imagePath = frontmatter[this.plugin.settings.imageProperty];
         
-        // Éviter de recharger la même image
+        // Avoid reloading the same image
         if (this.currentImagePath === imagePath) {
             return;
         }
@@ -99,8 +99,8 @@ class ImageSidebarView extends ItemView {
             cls: 'image-sidebar-placeholder'
         });
 
-        // Ajouter la fonctionnalité de glisser-déposer si pas d'image définie
-        if (message.includes('Aucune propriété')) {
+        // Add drag & drop functionality if no image is defined
+        if (message.includes('No "')) {
             this.setupDropZone(placeholder, container);
         }
         
@@ -108,17 +108,17 @@ class ImageSidebarView extends ItemView {
     }
 
     setupDropZone(placeholder: HTMLElement, container: Element) {
-        // Modifier le texte pour indiquer le drag & drop
+        // Modify text to indicate drag & drop
         placeholder.empty();
-        placeholder.createEl('div', { text: 'Aucune image définie' });
+        placeholder.createEl('div', { text: 'No image defined' });
         placeholder.createEl('div', { 
-            text: 'Glissez-déposez une image ici',
+            text: 'Drag and drop an image here',
             cls: 'image-sidebar-drop-hint'
         });
         
         placeholder.addClass('image-sidebar-dropzone');
 
-        // Événements de drag & drop
+        // Drag & drop events
         placeholder.addEventListener('dragover', (e) => {
             e.preventDefault();
             placeholder.addClass('image-sidebar-dragover');
@@ -138,9 +138,9 @@ class ImageSidebarView extends ItemView {
 
             const file = files[0];
             
-            // Vérifier que c'est une image
+            // Check if it's an image
             if (!file.type.startsWith('image/')) {
-                this.showTemporaryMessage(container, 'Veuillez déposer un fichier image', 'error');
+                this.showTemporaryMessage(container, 'Please drop an image file', 'error');
                 return;
             }
 
@@ -151,46 +151,36 @@ class ImageSidebarView extends ItemView {
     async handleImageDrop(file: File, container: Element) {
         const activeFile = this.app.workspace.getActiveFile();
         if (!activeFile) {
-            this.showTemporaryMessage(container, 'Aucun fichier ouvert', 'error');
+            this.showTemporaryMessage(container, 'No file open', 'error');
             return;
         }
 
         try {
-            // Afficher un indicateur de chargement
-            this.showTemporaryMessage(container, 'Importation en cours...', 'loading');
+            // Show loading indicator
+            this.showTemporaryMessage(container, 'Importing...', 'loading');
 
-            // Créer un nom de fichier unique
+            // Create unique filename
             const fileName = this.generateUniqueFileName(file.name);
             
-            // Lire le fichier
+            // Read file
             const arrayBuffer = await file.arrayBuffer();
             
-            // Obtenir le chemin d'attachement et créer le dossier si nécessaire
+            // Get attachment path and create folder if needed
             const attachmentPath = this.getAttachmentPath(fileName);
             await this.ensureAttachmentFolderExists(attachmentPath);
             
-            // Sauvegarder dans le vault
+            // Save to vault
             await this.app.vault.createBinary(attachmentPath, arrayBuffer);
 
-            // Mettre à jour le frontmatter du fichier actuel
+            // Update frontmatter of current file
             await this.updateFileFrontmatter(activeFile, fileName);
 
-            // Rafraîchir l'affichage
+            // Refresh display
             setTimeout(() => this.updateImage(), 100);
 
         } catch (error) {
-            console.error('Erreur lors de l\'importation:', error);
-            this.showTemporaryMessage(container, 'Erreur lors de l\'importation', 'error');
-        }
-    }
-
-    async ensureAttachmentFolderExists(filePath: string) {
-        // Extraire le dossier du chemin complet
-        const folderPath = filePath.substring(0, filePath.lastIndexOf('/'));
-        
-        if (folderPath && !this.app.vault.getAbstractFileByPath(folderPath)) {
-            // Créer le dossier s'il n'existe pas
-            await this.app.vault.createFolder(folderPath);
+            console.error('Error during import:', error);
+            this.showTemporaryMessage(container, 'Import error', 'error');
         }
     }
 
@@ -210,30 +200,40 @@ class ImageSidebarView extends ItemView {
         return fileName;
     }
 
+    async ensureAttachmentFolderExists(filePath: string) {
+        // Extract folder from full path
+        const folderPath = filePath.substring(0, filePath.lastIndexOf('/'));
+        
+        if (folderPath && !this.app.vault.getAbstractFileByPath(folderPath)) {
+            // Create folder if it doesn't exist
+            await this.app.vault.createFolder(folderPath);
+        }
+    }
+
     getAttachmentPath(fileName: string): string {
         const activeFile = this.app.workspace.getActiveFile();
         if (!activeFile) {
             return fileName;
         }
 
-        // Utiliser la même logique qu'Obsidian pour déterminer le dossier d'attachments
+        // Use the same logic as Obsidian to determine attachment folder
         const attachmentFolderPath = (this.app.vault as any).config?.attachmentFolderPath;
         
         if (!attachmentFolderPath || attachmentFolderPath === '/') {
-            // Sauvegarder à la racine du vault
+            // Save to vault root
             return fileName;
         } else if (attachmentFolderPath === './') {
-            // Sauvegarder dans le même dossier que le fichier actuel
+            // Save in same folder as current file
             const activeFileFolder = activeFile.parent?.path || '';
             return activeFileFolder ? activeFileFolder + '/' + fileName : fileName;
         } else if (attachmentFolderPath.startsWith('./')) {
-            // Chemin relatif au fichier actuel
+            // Path relative to current file
             const activeFileFolder = activeFile.parent?.path || '';
-            const relativePath = attachmentFolderPath.substring(2); // Enlever './'
+            const relativePath = attachmentFolderPath.substring(2); // Remove './'
             const fullPath = activeFileFolder ? activeFileFolder + '/' + relativePath : relativePath;
             return fullPath + '/' + fileName;
         } else {
-            // Chemin absolu depuis la racine du vault
+            // Absolute path from vault root
             return attachmentFolderPath + '/' + fileName;
         }
     }
@@ -247,21 +247,21 @@ class ImageSidebarView extends ItemView {
         const imageProperty = this.plugin.settings.imageProperty + ': "[[' + imageName + ']]"';
 
         if (match) {
-            // Frontmatter existe déjà
+            // Frontmatter already exists
             const frontmatter = match[1];
             const propertyRegex = new RegExp('^' + this.plugin.settings.imageProperty + ':.*$', 'm');
             
             if (frontmatter.match(propertyRegex)) {
-                // Remplacer la propriété existante
+                // Replace existing property
                 const newFrontmatter = frontmatter.replace(propertyRegex, imageProperty);
                 newContent = content.replace(frontmatterRegex, '---\n' + newFrontmatter + '\n---');
             } else {
-                // Ajouter la propriété
+                // Add property
                 const newFrontmatter = frontmatter + '\n' + imageProperty;
                 newContent = content.replace(frontmatterRegex, '---\n' + newFrontmatter + '\n---');
             }
         } else {
-            // Créer un nouveau frontmatter
+            // Create new frontmatter
             newContent = '---\n' + imageProperty + '\n---\n\n' + content;
         }
 
@@ -270,7 +270,7 @@ class ImageSidebarView extends ItemView {
 
     showTemporaryMessage(container: Element, message: string, type: 'loading' | 'error' | 'success' = 'loading') {
         container.empty();
-        const messageEl = container.createEl('div', { 
+        container.createEl('div', { 
             text: message,
             cls: 'image-sidebar-message image-sidebar-' + type
         });
@@ -289,11 +289,11 @@ class ImageSidebarView extends ItemView {
             let imageFile: TFile | null = null;
             let cleanImagePath = imagePath;
 
-            // Vérifier si c'est un lien Obsidian [[filename]]
+            // Check if it's an Obsidian link [[filename]]
             const obsidianLinkMatch = imagePath.match(/^\[\[(.+?)\]\]$/);
             if (obsidianLinkMatch) {
                 cleanImagePath = obsidianLinkMatch[1];
-                // Rechercher le fichier par nom dans tout le vault
+                // Search for file by name throughout the vault
                 const files = this.app.vault.getFiles();
                 imageFile = files.find(file => 
                     file.name === cleanImagePath || 
@@ -306,69 +306,69 @@ class ImageSidebarView extends ItemView {
                     file.basename === cleanImagePath
                 ) || null;
             } else {
-                // Méthode classique avec chemin relatif/absolu
+                // Classic method with relative/absolute path
                 imageFile = this.app.metadataCache.getFirstLinkpathDest(imagePath, activeFile.path);
             }
             
             if (!imageFile) {
-                this.showPlaceholder(container, 'Image non trouvée: ' + cleanImagePath);
+                this.showPlaceholder(container, 'Image not found: ' + cleanImagePath);
                 return;
             }
 
-            // Créer l'élément image
+            // Create image element
             const imageContainer = container.createEl('div', { cls: 'image-sidebar-container' });
             const img = imageContainer.createEl('img', { cls: 'image-sidebar-img' });
             
-            // Obtenir l'URL de l'image
+            // Get image URL
             const imageUrl = this.app.vault.getResourcePath(imageFile);
             img.src = imageUrl;
             img.alt = imagePath;
 
-            // Ajouter le nom du fichier image
+            // Add image filename
             imageContainer.createEl('div', { 
                 text: imageFile.name,
                 cls: 'image-sidebar-filename'
             });
 
-            // Gestion des erreurs de chargement
+            // Handle loading errors
             img.onerror = () => {
-                this.showPlaceholder(container, 'Erreur de chargement: ' + imagePath);
+                this.showPlaceholder(container, 'Loading error: ' + imagePath);
             };
 
         } catch (error) {
-            console.error('Erreur lors de l\'affichage de l\'image:', error);
-            this.showPlaceholder(container, 'Erreur: ' + imagePath);
+            console.error('Error displaying image:', error);
+            this.showPlaceholder(container, 'Error: ' + imagePath);
         }
     }
 
     async onClose() {
-        // Nettoyage si nécessaire
+        // Cleanup if needed
     }
 }
 
-// Plugin principal
+// Main plugin
 export default class ImageSidebarPlugin extends Plugin {
     settings: ImageSidebarSettings;
 
     async onload() {
         await this.loadSettings();
 
-        // Enregistrer la vue personnalisée
+        // Register custom view
         this.registerView(
             VIEW_TYPE_IMAGE_SIDEBAR,
             (leaf) => new ImageSidebarView(leaf, this)
         );
 
-        // Ajouter une commande pour ouvrir la vue
+        // Add command to open view
         this.addCommand({
             id: 'open-image-sidebar',
-            name: 'Ouvrir la sidebar d\'images',
+            name: 'Open image sidebar',
             callback: () => {
                 this.activateView();
             }
         });
 
-        // Ajouter automatiquement la vue à la sidebar droite au démarrage
+        // Automatically add view to right sidebar on startup
         this.app.workspace.onLayoutReady(() => {
             this.activateView();
         });
@@ -381,15 +381,15 @@ export default class ImageSidebarPlugin extends Plugin {
         const leaves = workspace.getLeavesOfType(VIEW_TYPE_IMAGE_SIDEBAR);
 
         if (leaves.length > 0) {
-            // Activer la vue existante
+            // Activate existing view
             leaf = leaves[0];
         } else {
-            // Créer une nouvelle vue dans la sidebar droite
+            // Create new view in right sidebar
             leaf = workspace.getRightLeaf(false);
             await leaf?.setViewState({ type: VIEW_TYPE_IMAGE_SIDEBAR, active: true });
         }
 
-        // Révéler la vue
+        // Reveal view
         if (leaf) {
             workspace.revealLeaf(leaf);
         }
